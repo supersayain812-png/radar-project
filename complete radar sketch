@@ -1,0 +1,63 @@
+
+#include <Servo.h>
+
+const int trigPin = 10;
+const int echoPin = 11;
+const int servoPin = 12;
+
+Servo radarServo;
+
+long getDistance() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  unsigned long duration =
+      pulseIn(echoPin, HIGH, 30000UL);
+
+  if (duration == 0) {
+    return 0;
+  }
+
+  return duration * 0.0343 / 2;
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  radarServo.attach(servoPin);
+}
+
+void loop() {
+  for (int angle = 15; angle <= 165; angle++) {
+    radarServo.write(angle);
+    delay(30);
+
+    long distance = getDistance();
+
+    Serial.print(angle);
+    Serial.print(",");
+    Serial.println(distance);
+
+    delay(20);
+  }
+
+  for (int angle = 165; angle >= 15; angle--) {
+    radarServo.write(angle);
+    delay(30);
+
+    long distance = getDistance();
+
+    Serial.print(angle);
+    Serial.print(",");
+    Serial.println(distance);
+
+    delay(20);
+  }
+}
