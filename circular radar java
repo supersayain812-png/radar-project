@@ -1,0 +1,295 @@
+
+import processing.serial.*;
+
+Serial myPort;
+
+int servoAngle = 90;
+float distanceCm = 0;
+final float MAX_DISTANCE = 200;
+
+float[] targetDistance = new float[181];
+int[] targetSeenFrame = new int[181];
+
+float cx, cy, radarR;
+
+void setup() {
+  size(1000, 970);
+  smooth(8);
+  frameRate(60);
+
+  cx = width / 2.0;
+  cy = height / 2.0;
+  radarR = min(width, height) * 0.43;
+
+  println(Serial.list());
+
+  // Change COM4 to your Arduino port if necessary.
+  myPort = new Serial(this, "COM4", 9600);
+  myPort.bufferUntil('\n');
+
+  for (int i = 0; i < 181; i++) {
+    targetDistance[i] = 0;
+    targetSeenFrame[i] = -10000;
+  }
+}
+
+void serialEvent(Serial p) {
+  String line = p.readStringUntil('\n');
+
+  if (line == null) return;
+
+  String[] parts = split(trim(line), ',');
+
+  if (parts.length == 2) {
+    try {
+      int a = int(parts[0]);
+      float d = float(parts[1]);
+
+      if (a >= 15 && a <= 165 && d >= 0) {
+        servoAngle = a;
+        distanceCm = d;
+
+        if (d > 0 && d <= MAX_DISTANCE) {
+          targetDistance[a] = d;
+          targetSeenFrame[a] = frameCount;
+        }
+      }
+    }
+    catch (Exception e) {
+      // Ignore invalid serial data.
+    }
+  }
+}
+
+void draw() {
+  background(0, 5, 2);
+
+  drawBackgroundGrid();
+  drawRadarRings();
+  drawTicksAndLabels();
+  drawTargets();
+  drawSweep();
+  drawCenter();
+  drawInformation();
+}
+
+float px(float angle, float radius) {
+  return cx + sin(radians(angle)) * radius;
+}
+
+float py(float angle, float radius) {
+  return cy - cos(radians(angle)) * radius;
+}
+
+void drawBackgroundGrid() {
+  stroke(20, 75, 35, 110);
+  strokeWeight(1);
+
+  for (int x = 15; x < width; x += 53) {
+    line(x, 0, x, height);
+  }
+
+  for (int y = 15; y < height; y += 53) {
+    line(0, y, width, y);
+  }
+}
+
+void drawRadarRings() {
+  noFill();
+
+  // Soft green outer glow
+  for (int i = 18; i >= 1; i--) {
+    stroke(40, 255, 75, 2);
+    strokeWeight(i * 2);
+    ellipse(cx, cy, radarR * 2, radarR * 2);
+  }
+
+  // Dark green radar face
+  noStroke();
+  for (int i = 0; i < 40; i++) {
+    float r = radarR * (1.0 - i / 45.0);
+    fill(15, 65, 25, 4);
+    ellipse(cx, cy, r * 2, r * 2);
+  }
+
+  // Range rings
+  noFill();
+  strokeWeight(1.5);
+
+  for (int i = 1; i <= 8; i++) {
+    float r = radarR * i / 8.0;
+    stroke(95, 255, 115, i == 8 ? 220 : 175);
+    ellipse(cx, cy, r * 2, r * 2);
+  }
+
+  // Crosshair lines
+  stroke(60, 180, 75, 100);
+  strokeWeight(1);
+
+  line(cx - radarR, cy, cx + radarR, cy);
+  line(cx, cy - radarR, cx, cy + radarR);
+}
+
+void drawTicksAndLabels() {
+  textAlign(CENTER, CENTER);
+
+  for (int a = 0; a < 360; a++) {
+    float inner = radarR - 2;
+    float outer;
+
+    if (a % 30 == 0) {
+      outer = radarR - 30;
+      strokeWeight(3);
+    } else if (a % 10 == 0) {
+      outer = radarR - 21;
+      strokeWeight(2);
+    } else {
+      outer = radarR - 11;
+      strokeWeight(1.5);
+    }
+
+    stroke(105, 255, 120, 230);
+    line(px(a, inner), py(a, inner),
+         px(a, outer), py(a, outer));
+
+    if (a % 10 == 0) {
+      fill(115, 255, 130);
+      textSize(a % 30 == 0 ? 16 : 13);
+      text(a, px(a, radarR + 22),
+              py(a, radarR + 22));
+    }
+  }
+
+  // Range numbers
+  fill(125, 255, 135);
+  textSize(12);
+
+  for (int i = 1; i <= 8; i++) {
+    float r = radarR * i / 8.0;
+    text(i * 25, cx + 25, cy - r - 4);
+  }
+
+  textSize(12);
+  text("cm", cx + 25, cy - radarR + 17);
+}
+
+void drawSweep() {
+  float angle = servoAngle - 90;
+  float beamR = radarR - 4;
+
+  // Broad translucent beam
+  noStroke();
+  fill(70, 255, 100, 12);
+  beginShape();
+  vertex(cx, cy);
+
+  for (int i = -8; i <= 8; i++) {
+    float a = angle + i * 0.65;
+    vertex(px(a, beamR), py(a, beamR));
+  }
+
+  endShape(CLOSE);
+
+  // Glowing beam layers
+  for (int i = 10; i >= 1; i--) {
+    stroke(80, 255, 110, 7);
+    strokeWeight(i * 2.2);
+    line(cx, cy, px(angle, beamR), py(angle, beamR));
+  }
+
+  // Bright beam edge
+  stroke(130, 255, 145, 210);
+  strokeWeight(2);
+  line(cx, cy, px(angle, beamR), py(angle, beamR));
+
+  stroke(200, 255, 205, 240);
+  strokeWeight(1);
+  line(cx, cy, px(angle, beamR), py(angle, beamR));
+}
+
+void drawTargets() {
+  for (int a = 15; a <= 165; a++) {
+    float d = targetDistance[a];
+    int age = frameCount - targetSeenFrame[a];
+
+    if (d <= 0 || d > MAX_DISTANCE || age > 150) {
+      continue;
+    }
+
+    float angle = a - 90;
+    float r = radarR * d / MAX_DISTANCE;
+    float x = px(angle, r);
+    float y = py(angle, r);
+
+    float alpha = map(age, 0, 150, 255, 0);
+
+    // Green glow
+    noStroke();
+    fill(70, 255, 100, alpha * 0.10);
+    ellipse(x, y, 36, 36);
+
+    fill(80, 255, 110, alpha * 0.22);
+    ellipse(x, y, 23, 23);
+
+    // Target core
+    fill(100, 255, 120, alpha);
+    ellipse(x, y, 9, 9);
+
+    // Target brackets
+    noFill();
+    stroke(220, 255, 220, alpha);
+    strokeWeight(1.4);
+
+    float s = 12;
+    float b = 5;
+
+    line(x-s, y-s, x-s+b, y-s);
+    line(x-s, y-s, x-s, y-s+b);
+
+    line(x+s, y-s, x+s-b, y-s);
+    line(x+s, y-s, x+s, y-s+b);
+
+    line(x-s, y+s, x-s+b, y+s);
+    line(x-s, y+s, x-s, y+s-b);
+
+    line(x+s, y+s, x+s-b, y+s);
+    line(x+s, y+s, x+s, y+s-b);
+  }
+}
+
+void drawCenter() {
+  noStroke();
+  fill(60, 255, 100, 25);
+  ellipse(cx, cy, 48, 48);
+
+  fill(0);
+  stroke(100, 255, 120);
+  strokeWeight(2);
+  ellipse(cx, cy, 48, 48);
+
+  noStroke();
+  fill(100, 255, 130);
+  ellipse(cx, cy, 8, 8);
+}
+
+void drawInformation() {
+  fill(100, 255, 120);
+  textAlign(LEFT);
+  textSize(17);
+
+  text("ARDUINO RADAR", 25, 32);
+  textSize(14);
+  text("ANGLE: " + servoAngle + " deg", 25, 58);
+
+  if (distanceCm > 0) {
+    text("DISTANCE: " + nf(distanceCm, 0, 1) + " cm",
+         25, 82);
+  } else {
+    text("DISTANCE: NO ECHO", 25, 82);
+  }
+
+  text("RANGE: 200 cm", 25, 106);
+
+  textAlign(RIGHT);
+  text("HC-SR04  |  SG90", width - 25, 32);
+}
